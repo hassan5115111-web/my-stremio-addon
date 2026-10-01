@@ -1,57 +1,63 @@
-const { addonBuilder, serveHTTP } = require("stremio-addon-sdk");
+const express = require('express');
+const cors = require('cors');
+const axios = require('axios');
 
-const builder = new addonBuilder({
-    id: "org.allinoneaddon",
-    version: "1.0.0",
-    name: "إضافة المحتوى الشامل",
-    description: "إضافة تجمع الأفلام، المسلسلات، الأنمي، والبرامج",
-    resources: ["catalog"],
-    types: ["movie", "series", "anime", "tv"],
+const app = express();
+app.use(cors());
+
+const PORT = process.env.PORT || 7000;
+
+// 1. إعداد الـ Manifest (تعريف الموارد لدعم الحلقات والمواسم)
+const manifest = {
+    id: 'org.mycustom.fullserver',
+    version: '1.0.0',
+    name: 'My Cinema Server',
+    description: 'سيرفر متكامل لدعم الأفلام والمسلسلات والحلقات كاملة',
+    resources: ['catalog', 'meta', 'stream'],
+    types: ['movie', 'series'],
     catalogs: [
-        { type: "movie", id: "all_movies", name: "الأفلام" },
-        { type: "series", id: "all_series", name: "المسلسلات" },
-        { type: "anime", id: "all_anime", name: "الأنمي" },
-        { type: "tv", id: "all_tv", name: "البرامج والبودكاست" }
+        { type: 'movie', id: 'top_movies', name: 'أحدث الأفلام' },
+        { type: 'series', id: 'top_series', name: 'أحدث المسلسلات' }
     ]
+};
+
+app.get('/manifest.json', (req, res) => {
+    res.json(manifest);
 });
 
-builder.defineCatalogHandler((args) => {
-    if (args.type === "movie") {
-        return Promise.resolve({
-            metas: [
-                {
-                    id: "tt0111161",
-                    type: "movie",
-                    name: "The Shawshank Redemption",
-                    poster: "https://images-na.ssl-images-amazon.com/images/M/MV5BODU4MjU4NjIwNl5BMl5BanBnXkFtZTgwMDU2MjEyMDE@._V1_SX300.jpg"
-                }
-            ]
-        });
-    } else if (args.type === "series") {
-        return Promise.resolve({
-            metas: [
-                {
-                    id: "tt0944947",
-                    type: "series",
-                    name: "Game of Thrones",
-                    poster: "https://m.media-amazon.com/images/M/MV5BN2IzYzBiOTQtNGIzMi00NDI5LTgxMzItN2M5MjJhMTRjYWU1XkEyXkFqcGdeQXVyNTA4NzY1MzY@._V1_SX300.jpg"
-                }
-            ]
-        });
-    } else if (args.type === "anime") {
-        return Promise.resolve({
-            metas: [
-                {
-                    id: "tt0407362",
-                    type: "anime",
-                    name: "One Piece",
-                    poster: "https://m.media-amazon.com/images/M/MV5BODcwNWE3OTMtMDc3MS00NDFjLWE1OTAtNDU3NjgxGP123456@._V1_SX300.jpg"
-                }
-            ]
-        });
+// 2. مسار الكتالوج (الصفحة الرئيسية)
+app.get('/catalog/:type/:id.json', async (req, res) => {
+    const { type } = req.params;
+    try {
+        const response = await axios.get(`https://v3-cinemeta.strem.fun/catalog/${type}/top.json`);
+        res.json(response.data);
+    } catch (error) {
+        res.json({ metas: [] });
     }
-    return Promise.resolve({ metas: [] });
 });
 
-serveHTTP(builder.getInterface(), { port: 7000 });
-console.log("Addon running at: http://127.0.0.1:7000/manifest.json");
+// 3. مسار تفاصيل مسلسل/فيلم وقائمة الحلقات (Meta Handler) - هذا الجزء هو المسؤول عن إظهار الحلقات!
+app.get('/meta/:type/:id.json', async (req, res) => {
+    const { type, id } = req.params;
+    try {
+        const response = await axios.get(`https://v3-cinemeta.strem.fun/meta/${type}/${id}.json`);
+        res.json(response.data);
+    } catch (error) {
+        res.json({ meta: null });
+    }
+});
+
+// 4. مسار جلب روابط التشغيل للحلقة أو الفيلم (Stream Handler)
+app.get('/stream/:type/:id.json', async (req, res) => {
+    const { type, id } = req.params; // يتضمن رقم الحلقة مثل: tt0944947:1:1
+    try {
+        const response = await axios.get(`https://torrentio.strem.fun/stream/${type}/${id}.json`);
+        res.json(response.data);
+    } catch (error) {
+        res.json({ streams: [] });
+    }
+});
+
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+});
